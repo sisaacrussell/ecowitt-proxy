@@ -1,9 +1,8 @@
-ARG BUILD_FROM
-FROM ${BUILD_FROM}
+FROM python:3.12-alpine
 
 RUN apk --update --no-cache add python3 py3-pip
 
-RUN pip install --no-cache-dir --break-system-packages requests flask
+RUN pip install --no-cache-dir requests flask
 
 RUN mkdir /app
 
