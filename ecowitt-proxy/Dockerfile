@@ -1,22 +1,20 @@
 FROM python:3.12-alpine
 
+# Install dependencies
 RUN apk --update --no-cache add python3 py3-pip
 
+# Install required Python packages
 RUN pip install --no-cache-dir requests flask
 
+# Create working directory
 RUN mkdir /app
 
+# Copy application files
 COPY app/ /app
-RUN chmod a+x /app/run.sh
+RUN chmod +x /app/run.sh
 
-# ChrisRomp@users.noreply.github.com
-LABEL \
-  io.hass.version="1.1.1" \
-  io.hass.type="addon" \
-  io.hass.arch="armhf|aarch64|i386|amd64|armv7" \
-  org.opencontainers.image.authors="Chris Romp" \
-  org.opencontainers.image.description="An HTTP receiver for Ecowitt data for sending to the Home Assistant integration."
-  # org.opencontainers.image.source="https://github.com/ChrisRomp/addon-ecowitt-proxy"
-
+# Set working directory
 WORKDIR /app
-CMD [ "./run.sh" ]
+
+# Run script
+CMD ["./run.sh"]
