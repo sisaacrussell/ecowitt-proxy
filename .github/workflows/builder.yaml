@@ -1,173 +1,93 @@
-# This workflow builds and tests changed add-ons in multiple architectures
-# Source: https://github.com/home-assistant/addons-example/blob/main/.github/workflows/builder.yaml
-name: Builder
-
-env:
-  BUILD_ARGS: "--test"
-  MONITORED_FILES: "build.yaml config.yaml Dockerfile app"
+name: Docker Build and Push
 
 on:
   push:
     branches:
       - main
-    paths-ignore:
-      - ".github/**"
-      - ".vscode/**"
+    paths:
+      - "ecowitt-proxy/**"
+      - ".github/workflows/builder.yaml"
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - ".github/**"
-      - ".vscode/**"
+    paths:
+      - "ecowitt-proxy/**"
+      - ".github/workflows/builder.yaml"
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  init:
-    # Collects changed files and identifies changed add-ons
-    runs-on: ubuntu-latest
-    name: Initialize builds
-    outputs:
-      changed_addons: ${{ steps.changed_addons.outputs.addons }}
-      changed: ${{ steps.changed_addons.outputs.changed }}
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v4
-
-      - name: Get changed files
-        id: changed_files
-        env:
-          CONTEXT_BASE_REF: ${{ github.base_ref }}
-          CONTEXT_EVENT: ${{ github.event_name }}
-          CONTEXT_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CONTEXT_PUSH_BEFORE: ${{ github.event.before }}
-        run: |
-          set -e
-          echo "Base ref: $CONTEXT_BASE_REF"
-          echo "Actions event: $CONTEXT_EVENT"
-          if [ "$CONTEXT_EVENT" == "pull_request" ]; then
-            base_commit=$CONTEXT_PR_BASE_SHA
-          elif [ "$CONTEXT_EVENT" == "push" ]; then
-            base_commit=$CONTEXT_PUSH_BEFORE
-          else
-            echo "Unknown event type: $CONTEXT_EVENT"
-            exit 1
-          fi
-          echo "Base commit: $base_commit"
-          git fetch origin $base_commit
-          diff=$(git diff --name-only --diff-filter=AMRD $base_commit | tr '\n' ' ')
-          echo "Changed files: $diff"
-          echo "CHANGED_FILES=$diff" >> "$GITHUB_OUTPUT"
-
-      # - name: Find add-on directories
-      #   id: addons
-      #   uses: home-assistant/actions/helpers/find-addons@master
-      #   # ref: https://github.com/home-assistant/actions/blob/master/helpers/find-addons/action.yml
-
-      - name: Find add-on directories
-        id: addons
-        run: |
-          declare -a addons
-          declare -a addons_list
-
-          for addon in $(find ./ -maxdepth 2 -name config.json -o -name config.yaml -o -name config.yml | cut -d "/" -f2 | sort -u); do
-            addons+=("${addon}");
-            addons_list+=("\"${addon}\",");
-          done
-
-          json_list=$(echo ${addons_list[@]} | rev | cut -c 2- | rev)
-
-          echo "Found addons: ${addons[@]}"
-          echo "Found addons (JSON): [${json_list}]"
-          echo "addons=${addons[@]}" >> "$GITHUB_OUTPUT"
-          echo "addons_list=[${json_list}]" >> "$GITHUB_OUTPUT"
-
-      - name: Get changed add-ons
-        id: changed_addons
-        run: |
-          declare -a changed_addons
-          for addon in ${{ steps.addons.outputs.addons }}; do
-            if [[ "${{ steps.changed_files.outputs.CHANGED_FILES }}" =~ $addon ]]; then
-              for file in ${{ env.MONITORED_FILES }}; do
-                  echo "Checking if $addon/$file is in changed files: ${{ steps.changed_files.outputs.CHANGED_FILES }}"
-                  if [[ "${{ steps.changed_files.outputs.CHANGED_FILES }}" =~ $addon/$file ]]; then
-                    echo "Matched $addon/$file."
-                    if [[ ! "${changed_addons[@]}" =~ $addon ]]; then
-                      changed_addons+=("\"${addon}\",");
-                      echo "Added $addon to changed add-ons."
-                    fi
-                  fi
-              done
-            fi
-          done
-
-          changed=$(echo ${changed_addons[@]} | rev | cut -c 2- | rev)
-
-          if [[ -n ${changed} ]]; then
-            echo "Changed add-ons: $changed";
-            echo "changed=true" >> $GITHUB_OUTPUT;
-            echo "addons=[$changed]" >> $GITHUB_OUTPUT;
-          else
-            echo "No add-on had any monitored files changed (${{ env.MONITORED_FILES }})";
-          fi
-
   build:
-    # Builds and pushes images for each changed add-on and valid architecture
-    needs: init
     runs-on: ubuntu-latest
-    if: needs.init.outputs.changed == 'true'
-    name: Build ${{ matrix.arch }} ${{ matrix.addon }} add-on
-    strategy:
-      matrix:
-        addon: ${{ fromJson(needs.init.outputs.changed_addons) }}
-        arch: ["aarch64", "amd64", "armhf", "armv7", "i386"]
+    name: Build Docker Image
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v6, linux/386]
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Get information
-        id: info
-        uses: home-assistant/actions/helpers/info@master
-        # ref: https://github.com/home-assistant/actions/blob/master/helpers/info/action.yml
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          path: "./${{ matrix.addon }}"
+          images: |
+            ghcr.io/${{ github.repository_owner }}/ecowitt-proxy
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Check if add-on should be built
-        id: check
-        run: |
-          if [[ "${{ steps.info.outputs.image }}" == "null" ]]; then
-            echo "Image property is not defined, skipping build"
-            echo "build_arch=false" >> $GITHUB_OUTPUT;
-          elif [[ "${{ steps.info.outputs.architectures }}" =~ ${{ matrix.arch }} ]]; then
-            echo "build_arch=true" >> $GITHUB_OUTPUT;
-             echo "image=$(echo ${{ steps.info.outputs.image }} | cut -d'/' -f3)" >> $GITHUB_OUTPUT;
-             echo "image: $image";
-             if [[ -z "${{ github.head_ref }}" ]] && [[ "${{ github.event_name }}" == "push" ]]; then
-                 echo "BUILD_ARGS=" >> $GITHUB_ENV;
-             fi
-           else
-             echo "${{ matrix.arch }} is not a valid arch for ${{ matrix.addon }}, skipping build";
-             echo "build_arch=false" >> $GITHUB_OUTPUT;
-          fi
-
-      - name: Login to GitHub Container Registry
-        if: env.BUILD_ARGS != '--test'
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build ${{ matrix.addon }} add-on
-        if: steps.check.outputs.build_arch == 'true'
-        uses: home-assistant/builder@2024.08.2
+      - name: Build and push
+        uses: docker/build-push-action@v5
         with:
-          args: |
-            ${{ env.BUILD_ARGS }} \
-            --${{ matrix.arch }} \
-            --target /data/${{ matrix.addon }} \
-            --image "${{ steps.check.outputs.image }}" \
-            --docker-hub "ghcr.io/${{ github.repository_owner }}" \
-            --addon
+          context: ./ecowitt-proxy
+          file: ./ecowitt-proxy/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  multi-platform:
+    name: Create Multi-Platform Manifest
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/ecowitt-proxy:latest
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386
