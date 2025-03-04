@@ -72,7 +72,7 @@ In your Ecowitt gateway, configure as you would for the [Home Assistant Ecowitt 
 
 ---
 
-## Verify It’s Working
+## Verify It's Working
 1. Check the ecowitt-proxy logs:
 
 ```bash
@@ -90,4 +90,24 @@ Using Home Assistant Webhook: https://homeassistant.local/api/webhook/<your_actu
 Using port: 8082
 2025-03-03 16:49:50 INFO     <ECOWITT_IP> - - [03/Mar/2025 16:49:50] "POST /log/ha HTTP/1.1" 200 -
 ```
+
+---
+
+## Credits
+
+This project is based on the original [Home Assistant Ecowitt Proxy Add-on](https://github.com/chrisromp/addon-ecowitt-proxy) created by [Chris Rompon](https://github.com/chrisromp). The original add-on provided the foundation for this standalone Docker container.
+
+## Modifications
+
+The following changes were made to convert the Home Assistant Add-on into a standalone Docker container:
+
+1. Removed Home Assistant Add-on specific configuration and dependencies
+2. Added environment variables for configuration instead of the Add-on configuration panel
+3. Modified the Docker build process to work independently of the Home Assistant Supervisor
+4. Added direct webhook URL configuration instead of relying on Home Assistant's internal service discovery
+5. Updated documentation to reflect Docker-specific configuration and usage
+6. Added support for Long-lived Access Tokens for authentication with Home Assistant
+7. Simplified the deployment process for non-Home Assistant Supervisor environments
+
+These modifications allow the proxy to function as a standalone Docker container while maintaining all the functionality of the original Home Assistant Add-on.
 
