@@ -66,6 +66,14 @@ jobs:
           exit-code: "1"
           cache: "false"
 
+      - name: Create the local TLS test certificate
+        run: |
+          mkdir -p "$RUNNER_TEMP/test-tls"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$RUNNER_TEMP/test-tls/key.pem" \
+            -out "$RUNNER_TEMP/test-tls/cert.pem" \
+            -subj /CN=localhost -addext subjectAltName=IP:127.0.0.1
+
       - name: Run the container smoke test
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -73,6 +81,7 @@ jobs:
           docker load --input image.tar
           docker run --rm --platform "$PLATFORM" --network none \
             --volume "$PWD/ecowitt-proxy/tests:/tests:ro" \
+            --volume "$RUNNER_TEMP/test-tls:/test-tls:ro" -e TEST_TLS_DIR=/test-tls \
             -e HA_WEBHOOK_ID=ci-webhook -e HA_AUTH_TOKEN=ci-legacy-token \
             --entrypoint /bin/sh ecowitt-proxy:ci -ec '
               ./run.sh >/tmp/proxy.log 2>&1 &
