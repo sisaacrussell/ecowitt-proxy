@@ -13,7 +13,6 @@ log_level = os.environ.get('ECOWITT_PROXY_LOG_LEVEL', 'INFO')  # TODO
 service_port = os.environ.get('ECOWITT_PROXY_PORT', '8082')
 ha_webhook_id = os.environ.get('HA_WEBHOOK_ID', 'no-webhook-id')
 base_url = os.environ.get('HA_BASE_URL', 'http://supervisor/core/api/webhook/')
-auth_token = os.environ.get('HA_AUTH_TOKEN', 'no-auth-token')
 forward_url = base_url + ha_webhook_id
 
 # Set logging level
@@ -52,19 +51,21 @@ def logHomeAssistant():
     # Log payload to console
     logging.debug("Received Payload: " + str(payload))
 
-    # Forward to Home Assistant
-    response = requests.post(url=forward_url, data=payload, timeout=5, headers={
-                             'Authorization': 'Bearer ' + auth_token})
-    response_text = response.text
+    try:
+        with requests.post(
+            forward_url, data=payload, timeout=5, allow_redirects=False, stream=True
+        ) as response:
+            status = response.status_code
+    except requests.Timeout:
+        logging.error("Home Assistant webhook request timed out")
+        return "Home Assistant webhook request timed out\n", 504
+    except requests.RequestException:
+        logging.error("Home Assistant webhook request failed")
+        return "Home Assistant webhook request failed\n", 502
 
-    # Check for error (any non-200 result)
-    if response.status_code != 200:
-        logging.error("HA API Error: " + str(response_text))
-        return "HA API Error: " + str(response_text)
-
-    # Log response to console
-    logging.debug("HA API Response: " + response_text)
-
+    if status != 200:
+        logging.error("Home Assistant webhook returned HTTP %s", status)
+        return "Home Assistant webhook rejected the request\n", 502
     return "OK"
 
 
@@ -75,7 +76,6 @@ if __name__ == "__main__":
         exit(1)
 
     logging.info("Starting Home Assistant Ecowitt Proxy")
-    logging.info("HA Webhook URL: " + forward_url)
 
     # Suppress Flask development server startup message (not working?)
     cli = sys.modules['flask.cli']

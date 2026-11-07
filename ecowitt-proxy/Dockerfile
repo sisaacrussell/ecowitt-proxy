@@ -1,20 +1,10 @@
-FROM python:3.12-alpine
+FROM python:3.12-alpine3.24
 
-# Install dependencies
-RUN apk --update --no-cache add python3 py3-pip
+WORKDIR /app
+RUN python -m pip install --no-cache-dir \
+    'Flask>=3.1.3' 'Werkzeug>=3.1.9' 'requests>=2.34.2' 'urllib3>=2.8.0'
 
-# Install required Python packages
-RUN pip install --no-cache-dir requests flask
-
-# Create working directory
-RUN mkdir /app
-
-# Copy application files
 COPY app/ /app
 RUN chmod +x /app/run.sh
 
-# Set working directory
-WORKDIR /app
-
-# Run script
 CMD ["./run.sh"]
