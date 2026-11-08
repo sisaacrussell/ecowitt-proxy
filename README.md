@@ -17,18 +17,16 @@ Run the following command to start the `ecowitt-proxy` container:
 docker run -d \
   --name ecowitt-proxy \
   -p 8082:8082 \
-  -e HA_BASE_URL="http://homeassistant.local:8123/api/webhook/" \
+  -e HA_BASE_URL="https://homeassistant.example.net/api/webhook/" \
   -e HA_WEBHOOK_ID="your_actual_webhook_id" \
-  -e HA_AUTH_TOKEN="your_long_lived_access_token" \
   -e ECOWITT_PROXY_PORT=8082 \
-  ecowitt-proxy
+  ghcr.io/sisaacrussell/ecowitt-proxy:latest
 ```
 
 Make sure to replace:
 
-- homeassistant.local:8123 with your actual Home Assistant URL.
+- `homeassistant.example.net` with the Home Assistant hostname on your TLS certificate. Include its HTTPS port if it differs from 443.
 - your_actual_webhook_id with your Home Assistant webhook ID.
-- your_long_lived_access_token with a valid HA Long-Lived Access Token.
 
 ### Option 2: Run with docker-compose
 If you prefer docker-compose, create a file named docker-compose.yml:
@@ -38,14 +36,13 @@ version: '3.7'
 services:
   ecowitt-proxy:
     container_name: ecowitt-proxy
-    image: ecowitt-proxy
+    image: ghcr.io/sisaacrussell/ecowitt-proxy:latest
     restart: unless-stopped
     ports:
       - "8082:8082"
     environment:
-      HA_BASE_URL: "http://homeassistant.local:8123/api/webhook/"
+      HA_BASE_URL: "https://homeassistant.example.net/api/webhook/"
       HA_WEBHOOK_ID: "your_actual_webhook_id"
-      HA_AUTH_TOKEN: "your_long_lived_access_token"
       ECOWITT_PROXY_PORT: 8082
 ```
 
@@ -57,6 +54,18 @@ docker-compose up -d
 
 ---
 
+## Home Assistant HTTPS
+
+The proxy verifies the Home Assistant certificate. If you use a private certificate authority, mount its CA bundle read-only and set `REQUESTS_CA_BUNDLE` to the file's path inside the container. The gateway still uploads to the proxy over HTTP. Keep the proxy port reachable only by the gateway.
+
+The Home Assistant webhook ID is the credential for the destination. Remove `HA_AUTH_TOKEN` from existing container settings when you upgrade.
+
+## Image refreshes
+
+GitHub Actions refreshes the image every Monday and supports manual runs from `main`. Each platform image must pass its vulnerability scan and smoke test before the workflow updates the GHCR tags. If GitHub pauses the schedule after repository inactivity, re-enable the workflow in Actions.
+
+If the GHCR package is private, sign in to GHCR before pulling the image. To update a running container, pull the new image and recreate the container with its current settings.
+
 ## How to Use
 
 In your Ecowitt gateway, configure as you would for the [Home Assistant Ecowitt Integration](https://www.home-assistant.io/integrations/ecowitt/), substituting the `Path` option with `/log/ha` only. Do not include your webhook ID here; it will be added to the path automatically by the add-on.
@@ -65,7 +74,7 @@ In your Ecowitt gateway, configure as you would for the [Home Assistant Ecowitt 
 
 - Customized: Enable
 - Protocol Type: Ecowitt
-- Server IP / Hostname: Your Home Assistant base URL
+- Server IP / Hostname: The Docker host running the proxy
 - Path: `/log/ha`
 - Port: Set to the same port configured in the add-on, default 8082
 - Upload interval: Your choice
@@ -86,7 +95,6 @@ You should see:
  * Running on http://127.0.0.1:8082
  * Running on http://10.0.20.95:8082
 2025-03-03 16:49:38 INFO     Press CTRL+C to quit
-Using Home Assistant Webhook: https://homeassistant.local/api/webhook/<your_actual_webhook_id>
 Using port: 8082
 2025-03-03 16:49:50 INFO     <ECOWITT_IP> - - [03/Mar/2025 16:49:50] "POST /log/ha HTTP/1.1" 200 -
 ```
@@ -106,8 +114,6 @@ The following changes were made to convert the Home Assistant Add-on into a stan
 3. Modified the Docker build process to work independently of the Home Assistant Supervisor
 4. Added direct webhook URL configuration instead of relying on Home Assistant's internal service discovery
 5. Updated documentation to reflect Docker-specific configuration and usage
-6. Added support for Long-lived Access Tokens for authentication with Home Assistant
-7. Simplified the deployment process for non-Home Assistant Supervisor environments
+6. Simplified the deployment process for non-Home Assistant Supervisor environments
 
 These modifications allow the proxy to function as a standalone Docker container while maintaining all the functionality of the original Home Assistant Add-on.
-
